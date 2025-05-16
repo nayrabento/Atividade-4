@@ -1,0 +1,302 @@
+---
+title: "Atividade 4"
+author: Nayra Bento Côgo
+output: html_document
+date: "2025-05-15"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Atividade 3
+
+O **objetivo** da atividade é conseguirmos acessar um repositório de dados de ocorrência de espécies, inspecionar os dados, avaliar sua qualidade e fazer um mapa com as ocorrências.
+
+Para isso deveríamos escolher um repositório e uma espécie de interesse.
+
+O repositório escolhido foi o GBIF (Global Biodiversity Information Facility) em conjunto com o OBIS (Ocean Biodiversity Information System), uma vez que a espécie escolhida é marinha : *Callichirus major*
+
+## Repositório GBIF
+
+#### 1 Para alcançarmos o objetivo da atividade começamos instalando os pacotes "tidyverse" e "rgbif"
+
+```{r instal. pacotes}
+#instalando os pacotes
+library ("tidyverse")
+library ("rgbif")
+library("dplyr")
+
+```
+
+#### 1.1 Utilizando a função "occ_data" fizemos uma busca simplificada das ocorrências no repositório do GBIF por meio do nome científico, número de identificação, país e outros. Com o foco na espécie escolhida aproveitamos também para selecionar apenas ocorrências que possuem coordenadas e sem problemas geoespaciais.
+
+```{r checando as funções}
+# checando as funcoes
+occ_data
+
+# baixando as ocorrencias
+corrupto_gbif <- occ_data(scientificName = "Callichirus major", 
+                      hasCoordinate = TRUE,
+                      hasGeospatialIssue=FALSE)
+
+# dimensoes
+dim(corrupto_gbif)
+```
+
+#### 2 Verificamos o tamanho da tabela de dados (quantas observações e varíaveis).
+
+```{r}
+dim(corrupto_gbif$data)
+```
+#### 2.1 Entendendo a estrutura dos dados.
+```{r}
+# checar campos
+corrupto_gbif$data %>% names
+```
+#### 2.1.1 Utilizamos a coluna issues pois ela indica problema já identificados pelo validador automático do repositório. Para conferir esse problemas utilizamos a função "gbif_issues".
+```{r}
+gbif_issues()
+```
+#### 2.1.2 Nessa etapa checamos os problema reportados e fazemos um pequeno tratamento utilizando a a função "strsplit" para individualizar os issues e conferi-lós.
+```{r}
+# checando os problemas reportados
+issues_gbif <- corrupto_gbif$data$issues %>% 
+  unique() %>% 
+  strsplit(., "[,]") %>% 
+  unlist()
+
+gbif_issues() %>% 
+  data.frame() %>% 
+  filter(code %in% issues_gbif)
+```
+
+#### 2.2 Seguimos selecionando algumas varíaveis para a validação dos dados e futuras análises, como coordenadas, profundidade, nome da base de dados etc.
+
+```{r}
+corrupto_gbif1 <-  corrupto_gbif$data %>%
+  dplyr::select(scientificName, acceptedScientificName, decimalLatitude, decimalLongitude,
+                issues, waterBody, basisOfRecord, occurrenceStatus, rightsHolder, 
+                datasetName, recordedBy, depth, locality, habitat) 
+```
+
+#### 2.3 Analisamos quantas ocorrências foram únicas aplicando a função "distinct" do pacote dplyr.
+
+```{r}
+corrupto_gbif1 <- corrupto_gbif1 %>% 
+  distinct() 
+```
+
+#### 2.4 Aplicamos a função unique a cada coluna com um loop na função "lapply" para identificar todos os valores únicos presentes nos dados.
+
+```{r}
+# checando os niveis dos fatores
+lapply(corrupto_gbif1, unique) 
+```
+
+#### 2.5 Para refirnarmos os nossos dados precisamos conferir se as coordenadas são válidas utilizando funções dos pacotes "CoordinateCleaner" e "bcd"
+
+```{r}
+library(bdc)
+library(CoordinateCleaner)
+
+# checando as coordenadas válidas e próximas a capitais (muitas vezes as coordenadas são erroneamente associadas a capitais dos países)
+
+cl <- corrupto_gbif1 %>%
+  CoordinateCleaner::clean_coordinates(species = "acceptedScientificName",
+                                       lat = "decimalLatitude",
+                                       lon = "decimalLongitude",
+                                       tests = c("capitals", 
+                                                 "centroids","equal", 
+                                                 "gbif", "institutions", 
+                                                 "outliers", "seas", 
+                                                 "zeros"))
+```
+
+#### 2.5.1 Como algumas coordenadas podem estar em terra e estamos trabalhando com um animal de ambiente praial, esperamos que ele seja encontrado mais próximo a costa. Por isso, conferimos se não há coordenadas em terra muito discrepantes localizadas em terras firmes. Visualizamos as coordenadas por meio de um mapa usando o pacote "ggplot2".
+
+```{r}
+# verificando as coordenadas com flags
+library(ggplot2)
+
+# capitais (padrão é um raio de 10km)
+ggplot() +
+  borders("world", fill = "lightgray") +
+  geom_point(data = cl, aes(x = decimalLongitude, y = decimalLatitude, color = `.cap`)) +
+  coord_quickmap() +
+  theme_classic()
+```
+
+#### 2.6 Nessa etapa verificamos se se os pontos de ocorrência estão corretamente localizados no mar, de acordo com a variável .sea
+
+```{r}
+# pontos no mar
+ggplot() +
+  borders("world", fill = "lightgray") +
+  geom_point(data = cl, aes(x = decimalLongitude, y = decimalLatitude, color = `.sea`)) +
+  coord_quickmap() +
+  theme_classic()
+```
+
+#### 3 Fizemos uma limpeza dos nossos dados já que, usamos registros do GBIF e algum dado poderia demonstrar uma certa discrepância.
+
+```{r}
+# filtrando todas do dataset suspeito
+corrupto_gbif_noDiveboard <- corrupto_gbif1 %>% 
+  filter(!datasetName %in% c("Diveboard - Scuba diving citizen science"))
+
+```
+
+#### 3.1 Seguimos limpando os dado mais ao norte.
+
+```{r}
+corrupto_gbif_noDiveboard %>% 
+  filter(decimalLatitude > 25) %>% 
+  arrange(-decimalLatitude) %>% 
+  data.frame()
+```
+
+#### 3.1.1 Mantemos os registros de latitude menor que 31 graus.
+
+```{r}
+corrupto_gbif_ok <- corrupto_gbif_noDiveboard %>% 
+  filter(decimalLatitude < 31) 
+```
+
+#### 4 Checamos os nosso pontos através do mapa mundi por meio das coordenadas. Para isso carregamos as nossas bibliotecas "ggmap", "maps" e "mapdata"
+
+```{r}
+library(ggmap)
+library(maps)
+library(mapdata)
+
+world <- map_data('world')
+
+# checando os pontos
+
+ggplot() +
+  geom_polygon(data = world, aes(x = long, y = lat, group = group)) +
+  coord_fixed() +
+  theme_classic() +
+  geom_point(data = corrupto_gbif_ok, aes(x = decimalLongitude, y = decimalLatitude), color = "red") +
+  labs(x = "longitude", y = "latitude", title = expression(italic("Callichirus major")))
+
+```
+
+## Repositório OBIS
+
+### Para o repositório do OBIS seguimos com os mesmos procedimentos que utilizamos no GBIF
+
+#### 1 Utilizamos o pacote "robis" e a função occurrence deste pacote.
+```{r}
+## OBIS
+corrupto_obis <- robis::occurrence("Callichirus major")
+```
+#### 1.1 As variavéis tem os mesmo nomes, já que tanto o OBIS quanto o GBIF utilizam o sistema DwC, mas os problemas reportados neste caso são indicados na coluna flags. 
+```{r}
+# checando os dados
+names(corrupto_obis)
+```
+#### 1.2 Filtramos os dados de ocorrências da espécies do trabalho e identificamos registros potencialmente problemáticos.
+```{r}
+corrupto_obis1 <- corrupto_obis %>% 
+  dplyr::select(scientificName, decimalLatitude, decimalLongitude, bathymetry,
+                flags, waterBody, basisOfRecord, occurrenceStatus, 
+                datasetName, recordedBy, depth, locality) %>% 
+  distinct()
+
+# check problemas reportados (flags)
+corrupto_obis1 %>% 
+  distinct(flags)
+```
+#### 1.3 Nessa etapa usamos as flags para fitrar as ocorrências em terra.
+```{r}
+# check NA em datasetName
+corrupto_obis1 %>% 
+  filter(!flags %in% c("NO_DEPTH,ON_LAND", "ON_LAND", "DEPTH_EXCEEDS_BATH,ON_LAND"),
+         is.na(datasetName)) %>% 
+  distinct(waterBody)
+```
+#### 1.4 Verificamos se aida há ocorrências estranhas.
+```{r}
+# checando os niveis
+corrupto_obis1 %>% 
+  filter(!flags %in% c("NO_DEPTH,ON_LAND", "ON_LAND", "DEPTH_EXCEEDS_BATH,ON_LAND"),
+         !is.na(datasetName),
+         !waterBody %in% c("North Atlantic Ocean", "South Atlantic", "Gulf of Mexico")) %>% 
+  lapply(., unique)
+```
+#### 1.6 Filtramos as ocorrências mais confiáveis e plotei esses dados em um mapa. Como não tivemos ocorrências no OBIS, não identificamos elas no mapa.
+```{r}
+# aplicando os filtros
+corrupto_obis_ok <- corrupto_obis1 %>% 
+  filter(!flags %in% c("NO_DEPTH,ON_LAND", "ON_LAND", "DEPTH_EXCEEDS_BATH,ON_LAND"),
+         !is.na(datasetName),
+         !waterBody %in% c("North Atlantic Ocean", "South Atlantic", "Gulf of Mexico"))
+
+# plot
+ggplot() +
+  geom_polygon(data = world, aes(x = long, y = lat, group = group)) +
+  coord_fixed() +
+  theme_classic() +
+  geom_point(data = corrupto_obis_ok, aes(x = decimalLongitude, y = decimalLatitude, color = waterBody)) +
+  labs(x = "longitude", y = "latitude", title = expression(italic("Callichirus major")))
+
+corrupto_obis_final <- corrupto_obis_ok %>% 
+  filter(decimalLongitude > 0 | decimalLongitude > -100)
+```
+## UNINDO OS DADOS DO GBIF E OBIS
+#### 1 Vamos comparar as colunas dos dois data frames.
+```{r}
+# unindo GBIF e OBIS
+# vendo as diferencas
+setdiff(names(corrupto_gbif_ok), names(corrupto_obis_ok))
+
+```
+```{r}
+setdiff(names(corrupto_obis_final), names(corrupto_obis_final))
+```
+#### Com os dados limpos do GBIF e OBIS, os dados foram padronizados e podemos plotar as ocorrências juntas.
+```{r}
+all_data <- bind_rows(corrupto_gbif_ok %>% 
+                        mutate(repo = paste0("gbif", row.names(.))), 
+                      corrupto_obis_final %>% 
+                        mutate(repo = paste0("obis", row.names(.)))) %>%
+  column_to_rownames("repo") %>% 
+  dplyr::select(decimalLongitude, decimalLatitude, depth) %>% 
+  distinct() %>% 
+  rownames_to_column("occ") %>% 
+  separate(col = "occ", into = c("datasetName", "rn"), sep = 4) %>%
+  mutate(scientificName = "Callichirus major") %>% 
+  dplyr::select(-rn)
+
+
+# mapeando as ocorrencias
+ggplot() +
+  geom_polygon(data = world, aes(x = long, y = lat, group = group)) +
+  coord_fixed() +
+  theme_classic() +
+  geom_point(data = all_data, aes(x = decimalLongitude, y = decimalLatitude, color = datasetName)) +
+  #theme(legend.title = element_blank()) +
+  labs(x = "longitude", y = "latitude", title = expression(italic("Callichirus major")))
+```
+#### Os dados foram guardados.
+```{r}
+#salavando os dados em csv
+write.csv(all_data, "occ_GBIF-OBIS_par_hepa.csv", row.names = FALSE)
+
+```
+
+
+-
+```{r cars3}
+summary(cars)
+```
+
+
+
+```{r pressure, echo=FALSE}
+plot(pressure)
+```
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
