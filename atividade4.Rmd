@@ -49,16 +49,22 @@ dim(corrupto_gbif)
 ```{r}
 dim(corrupto_gbif$data)
 ```
+
 #### 2.1 Entendendo a estrutura dos dados.
+
 ```{r}
 # checar campos
 corrupto_gbif$data %>% names
 ```
+
 #### 2.1.1 Utilizamos a coluna issues pois ela indica problema já identificados pelo validador automático do repositório. Para conferir esse problemas utilizamos a função "gbif_issues".
+
 ```{r}
 gbif_issues()
 ```
+
 #### 2.1.2 Nessa etapa checamos os problema reportados e fazemos um pequeno tratamento utilizando a a função "strsplit" para individualizar os issues e conferi-lós.
+
 ```{r}
 # checando os problemas reportados
 issues_gbif <- corrupto_gbif$data$issues %>% 
@@ -188,16 +194,21 @@ ggplot() +
 ### Para o repositório do OBIS seguimos com os mesmos procedimentos que utilizamos no GBIF
 
 #### 1 Utilizamos o pacote "robis" e a função occurrence deste pacote.
+
 ```{r}
 ## OBIS
 corrupto_obis <- robis::occurrence("Callichirus major")
 ```
-#### 1.1 As variavéis tem os mesmo nomes, já que tanto o OBIS quanto o GBIF utilizam o sistema DwC, mas os problemas reportados neste caso são indicados na coluna flags. 
+
+#### 1.1 As variavéis tem os mesmo nomes, já que tanto o OBIS quanto o GBIF utilizam o sistema DwC, mas os problemas reportados neste caso são indicados na coluna flags.
+
 ```{r}
 # checando os dados
 names(corrupto_obis)
 ```
+
 #### 1.2 Filtramos os dados de ocorrências da espécies do trabalho e identificamos registros potencialmente problemáticos.
+
 ```{r}
 corrupto_obis1 <- corrupto_obis %>% 
   dplyr::select(scientificName, decimalLatitude, decimalLongitude, bathymetry,
@@ -209,7 +220,9 @@ corrupto_obis1 <- corrupto_obis %>%
 corrupto_obis1 %>% 
   distinct(flags)
 ```
+
 #### 1.3 Nessa etapa usamos as flags para fitrar as ocorrências em terra.
+
 ```{r}
 # check NA em datasetName
 corrupto_obis1 %>% 
@@ -217,7 +230,9 @@ corrupto_obis1 %>%
          is.na(datasetName)) %>% 
   distinct(waterBody)
 ```
+
 #### 1.4 Verificamos se aida há ocorrências estranhas.
+
 ```{r}
 # checando os niveis
 corrupto_obis1 %>% 
@@ -226,7 +241,9 @@ corrupto_obis1 %>%
          !waterBody %in% c("North Atlantic Ocean", "South Atlantic", "Gulf of Mexico")) %>% 
   lapply(., unique)
 ```
+
 #### 1.6 Filtramos as ocorrências mais confiáveis e plotei esses dados em um mapa. Como não tivemos ocorrências no OBIS, não identificamos elas no mapa.
+
 ```{r}
 # aplicando os filtros
 corrupto_obis_ok <- corrupto_obis1 %>% 
@@ -245,18 +262,24 @@ ggplot() +
 corrupto_obis_final <- corrupto_obis_ok %>% 
   filter(decimalLongitude > 0 | decimalLongitude > -100)
 ```
+
 ## UNINDO OS DADOS DO GBIF E OBIS
+
 #### 1 Vamos comparar as colunas dos dois data frames.
+
 ```{r}
 # unindo GBIF e OBIS
 # vendo as diferencas
 setdiff(names(corrupto_gbif_ok), names(corrupto_obis_ok))
 
 ```
+
 ```{r}
 setdiff(names(corrupto_obis_final), names(corrupto_obis_final))
 ```
-#### Com os dados limpos do GBIF e OBIS, os dados foram padronizados e podemos plotar as ocorrências juntas.
+
+#### 2 Com os dados limpos do GBIF e OBIS, os dados foram padronizados e podemos plotar as ocorrências juntas.
+
 ```{r}
 all_data <- bind_rows(corrupto_gbif_ok %>% 
                         mutate(repo = paste0("gbif", row.names(.))), 
@@ -280,23 +303,12 @@ ggplot() +
   #theme(legend.title = element_blank()) +
   labs(x = "longitude", y = "latitude", title = expression(italic("Callichirus major")))
 ```
-#### Os dados foram guardados.
+
+#### 3 Os dados foram guardados.
+
 ```{r}
 #salavando os dados em csv
 write.csv(all_data, "occ_GBIF-OBIS_par_hepa.csv", row.names = FALSE)
 
 ```
 
-
--
-```{r cars3}
-summary(cars)
-```
-
-
-
-```{r pressure, echo=FALSE}
-plot(pressure)
-```
-
-Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
